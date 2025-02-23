@@ -1,0 +1,36 @@
+name: Run Python Script Every Hour
+
+on:
+  schedule:
+    - cron: "0 * * * *"  # Runs at the start of every hour
+  workflow_dispatch:    # Allows manual trigger as well
+
+jobs:
+  run-job:
+    runs-on: ubuntu-latest
+    environment: default
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.x"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Python script
+        env:
+          AIRTABLE_API_KEY: ${{ secrets.AIRTABLE_API_KEY }}
+          AIRTABLE_BASE_ID: ${{ secrets.AIRTABLE_BASE_ID }}
+          AIRTABLE_TABLE_NAME: ${{ secrets.AIRTABLE_TABLE_NAME }}
+          AIRTABLE_VIEW_ID: ${{ secrets.AIRTABLE_VIEW_ID }}
+          CVENT_CLIENT_ID: ${{ secrets.CVENT_CLIENT_ID }}
+          CVENT_CLIENT_SECRET: ${{ secrets.CVENT_CLIENT_SECRET }}
+          CVENT_EVENT_ID: ${{ secrets.CVENT_EVENT_ID }}
+        run: python main.py
