@@ -317,8 +317,8 @@ def update_session_speakers(session_id, airtable_speaker_codes, airtable_moderat
     moderator_category_id = CVENT_SPEAKER_CATEGORIES.get("moderator")
 
     # Convert Airtable speaker codes to Cvent speaker IDs
-    airtable_speaker_ids = {AVAILABLE_SPEAKERS[code]: speaker_category_id for code in airtable_speaker_codes if code in available_speakers}
-    airtable_moderator_ids = {AVAILABLE_SPEAKERS[code]: moderator_category_id for code in airtable_moderator_codes if code in available_speakers}
+    airtable_speaker_ids = {AVAILABLE_SPEAKERS[code]: speaker_category_id for code in airtable_speaker_codes if code in AVAILABLE_SPEAKERS}
+    airtable_moderator_ids = {AVAILABLE_SPEAKERS[code]: moderator_category_id for code in airtable_moderator_codes if code in AVAILABLE_SPEAKERS}
 
     # Combine all assignments
     all_airtable_speakers = {**airtable_speaker_ids, **airtable_moderator_ids}
