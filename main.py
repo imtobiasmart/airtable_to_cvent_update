@@ -396,7 +396,6 @@ def update_cvent_session(session_id, session_data):
         return
 
     description_html = convert_markdown_to_html(session_data["description"])
-    print(description_html)
 
     # Fetch custom field IDs
     custom_fields = get_cvent_custom_fields()
@@ -438,7 +437,6 @@ def update_cvent_session(session_id, session_data):
 # Main function to check for updates every hour
 def check_and_update_sessions():
     modified_sessions = get_modified_airtable_sessions()
-    print(modified_sessions)
 
     if not modified_sessions:
         print("No relevant session fields modified in the last hour.")
