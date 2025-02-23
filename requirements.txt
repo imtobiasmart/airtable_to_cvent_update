@@ -2,3 +2,4 @@ pyairtable~=3.0.1
 protobuf~=5.29.3
 requests~=2.31.0
 pytz~=2023.3
+markdown~=3.4.0

@@ -4,6 +4,8 @@ from datetime import datetime, timedelta, timezone
 from pyairtable import Api
 import pytz
 import os
+import markdown
+import re
 
 # Cvent API Credentials
 CVENT_HOST = "https://api-platform.cvent.com"
@@ -346,6 +348,38 @@ def update_session_speakers(session_id, airtable_speaker_codes, airtable_moderat
 
 CUSTOM_FIELDS = get_cvent_custom_fields()
 
+def fix_bold_italic_syntax(text):
+    """Fix incorrectly formatted bold/italic text by removing spaces inside the asterisks."""
+    text = re.sub(r'\*\*(.*?)\s\*\*', r'**\1**', text)  # Fix bold
+    text = re.sub(r'\*\*\*(.*?)\s\*\*\*', r'***\1***', text)  # Fix bold & italic
+    text = re.sub(r'\*(.*?)\s\*', r'*\1*', text)  # Fix italic
+    return text
+
+
+
+def convert_markdown_to_html(markdown_text):
+    """Converts Markdown to HTML while ensuring paragraphs are properly spaced."""
+    if not markdown_text:
+        return ""
+
+    # Fix bold/italic formatting issues
+    markdown_text = fix_bold_italic_syntax(markdown_text)
+
+    # Remove leading spaces from each line
+    markdown_text = re.sub(r'^\s+', '', markdown_text, flags=re.MULTILINE)
+
+    # Ensure every new line creates a new paragraph
+    markdown_text = re.sub(r'([^\n])\n([^\n])', r'\1\n\n\2', markdown_text)
+
+    # Convert Markdown to HTML
+    html = markdown.markdown(markdown_text, extensions=["extra"])
+
+    # Add empty paragraphs between real paragraphs for extra spacing
+    html = re.sub(r'</p>\s*<p>', '</p>\n<p></p>\n<p>', html)
+
+    return html
+
+
 def update_cvent_session(session_id, session_data):
     url = f"{CVENT_HOST}/{CVENT_VERSION}/sessions/{session_id}"
     headers = {
@@ -361,6 +395,12 @@ def update_cvent_session(session_id, session_data):
         print(f"Skipping update for session {session_id} due to missing details.")
         return
 
+    description_html = convert_markdown_to_html(session_data["description"])
+    print(description_html)
+
+    # Fetch custom field IDs
+    custom_fields = get_cvent_custom_fields()
+
     # Sync both Speakers & Moderators
     update_session_speakers(session_id, session_data["speakers"], session_data["moderators"])
 
@@ -371,7 +411,7 @@ def update_cvent_session(session_id, session_data):
         "title": session_data["title"] if session_data["title"] else existing_session.get("name"),
         "start": session_data["start_time"] if session_data["start_time"] else existing_session.get("start"),
         "end": session_data["end_time"] if session_data["end_time"] else existing_session.get("end"),
-        "description": session_data["description"] if session_data["description"] else existing_session.get("description"),
+        "description": description_html,
         "location": {"id": CVENT_SESSION_LOCATIONS.get(session_data["location"])} if session_data["location"] else existing_session.get("location"),
     }
 
@@ -387,13 +427,13 @@ def update_cvent_session(session_id, session_data):
 
     # Update custom fields
     if "stage" in session_data and session_data["stage"]:
-        update_session_custom_field(session_id, CUSTOM_FIELDS.get("stage"), session_data["stage"])
+        update_session_custom_field(session_id, custom_fields.get("stage"), session_data["stage"])
 
     if "type" in session_data and session_data["type"]:
-        update_session_custom_field(session_id, CUSTOM_FIELDS.get("type"), session_data["type"])
+        update_session_custom_field(session_id, custom_fields.get("type"), session_data["type"])
 
     if "tags" in session_data and session_data["tags"]:
-        update_session_custom_field(session_id, CUSTOM_FIELDS.get("tags"), session_data["tags"])
+        update_session_custom_field(session_id, custom_fields.get("tags"), session_data["tags"])
 
 # Main function to check for updates every hour
 def check_and_update_sessions():
