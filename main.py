@@ -84,7 +84,7 @@ def get_modified_airtable_sessions():
     records = table.all(view=AIRTABLE_VIEW_ID, formula=formula)
 
     return {
-        record["fields"]["Session ID"]: {
+        record["fields"]["Cvent Session ID"]: {
             "record_id": record["id"],
             "title": record["fields"].get("Session Title (<100 characters)", "").strip(),
             "start_time": convert_airtable_to_cvent_datetime(record["fields"].get("S25 Start Date/Time", "")),
@@ -97,7 +97,7 @@ def get_modified_airtable_sessions():
             "type": record["fields"].get("W Presentation Type Text", "").strip(),  # Using text field
             "tags": record["fields"].get("Website Tags (SELECT 3 MAX)", []) if isinstance(record["fields"].get("Website Tags (SELECT 3 MAX)"), list) else []
         }
-        for record in records if "Session ID" in record["fields"]
+        for record in records if "Cvent Session ID" in record["fields"]
     }
 
 
