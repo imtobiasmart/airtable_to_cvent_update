@@ -348,81 +348,128 @@ def update_session_speakers(session_id, airtable_speaker_codes, airtable_moderat
 
 CUSTOM_FIELDS = get_cvent_custom_fields()
 
+
 def fix_bold_italic_syntax(text):
-    """Fix incorrectly formatted bold/italic text by removing spaces inside the asterisks."""
-    text = re.sub(r'\*\*(.*?)\s\*\*', r'**\1**', text)  # Fix bold
-    text = re.sub(r'\*\*\*(.*?)\s\*\*\*', r'***\1***', text)  # Fix bold & italic
-    text = re.sub(r'\*(.*?)\s\*', r'*\1*', text)  # Fix italic
+    """Fix incorrectly formatted bold/italic text by removing extra spaces inside asterisks."""
+    text = re.sub(r'\*\*\*(.*?)\s\*\*\*', r'***\1***', text)  # Bold & italic
+    text = re.sub(r'\*\*(.*?)\s\*\*', r'**\1**', text)          # Bold
+    text = re.sub(r'\*(.*?)\s\*', r'*\1*', text)                # Italic
     return text
 
 
-
 def convert_markdown_to_html(markdown_text):
-    """Converts Markdown to HTML while ensuring paragraphs are properly spaced."""
+    """
+    Converts Markdown to HTML with the following behavior:
+      - A block of text separated by two or more newlines becomes a paragraph (<p>).
+      - Within each block, a single newline is replaced by a <br />.
+    """
     if not markdown_text:
         return ""
 
-    # Fix bold/italic formatting issues
-    markdown_text = fix_bold_italic_syntax(markdown_text)
-
-    # Remove leading spaces from each line
-    markdown_text = re.sub(r'^\s+', '', markdown_text, flags=re.MULTILINE)
-
-    # Ensure every new line creates a new paragraph
-    markdown_text = re.sub(r'([^\n])\n([^\n])', r'\1\n\n\2', markdown_text)
-
-    # Convert Markdown to HTML
     html = markdown.markdown(markdown_text, extensions=["extra"])
 
-    # Add empty paragraphs between real paragraphs for extra spacing
-    html = re.sub(r'</p>\s*<p>', '</p>\n<p></p>\n<p>', html)
+    # Split the text into paragraphs on two or more newlines.
+    paragraphs = re.split(r'\n{2,}', html)
 
-    return html
+    html_paragraphs = []
+    for para in paragraphs:
+        # Remove any leading/trailing whitespace in the paragraph.
+        para = para.strip()
+        # Wrap the paragraph in <p> tags.
+        html_paragraphs.append(f"<p>{para}</p>")
+
+    # Join the paragraphs with a newline separator.
+    return "\n".join(html_paragraphs)
 
 
 def update_cvent_session(session_id, session_data):
+    """
+    Updates a Cvent session by merging new values from session_data with
+    existing values fetched from Cvent. For every parameter that can be updated,
+    if a new value is not provided, the current value is preserved.
+
+    The description is converted from Markdown to plain text (since HTML is not supported),
+    and the "type" field (if provided as a string) is sent as an object.
+    """
+    # Fetch current session details from Cvent
+    existing_session = get_cvent_session(session_id)
+    if not existing_session:
+        print(f"Skipping update for session {session_id} due to missing details.")
+        return
+
+    # Build the payload using new values if provided; otherwise, use existing values.
+    # Note: The keys in existing_session should match the API's expected names.
+    payload = {}
+
+    # Mandatory fields:
+    payload["event"] = {"id": CVENT_EVENT_ID}
+    payload["title"] = session_data.get("title", existing_session.get("title"))
+
+    # Description: convert Markdown to plain text (newlines are preserved)
+    if "description" in session_data and session_data["description"].strip():
+        payload["description"] = convert_markdown_to_html(session_data["description"])
+    else:
+        payload["description"] = existing_session.get("description", "")
+
+    payload["start"] = session_data.get("start_time", existing_session.get("start"))
+    payload["end"] = session_data.get("end_time", existing_session.get("end"))
+
+    # Location: if provided, map it via your CVENT_SESSION_LOCATIONS mapping
+    if "location" in session_data and session_data["location"].strip():
+        loc_id = CVENT_SESSION_LOCATIONS.get(session_data["location"])
+        if loc_id:
+            payload["location"] = {"id": loc_id}
+        else:
+            payload["location"] = existing_session.get("location")
+    else:
+        payload["location"] = existing_session.get("location")
+
+    # For the "type" field: if session_data provides a new value (a nonempty string),
+    # wrap it in an object with a "name" key; otherwise, use the existing value.
+    new_type = session_data.get("type")
+    if new_type and new_type.strip():
+        # If the existing value is already an object, we can choose to update its name.
+        payload["type"] = {"name": new_type.strip()}
+    else:
+        payload["type"] = existing_session.get("type")
+
+    # Now, for all additional fields (as defined in the API schema)
+    # We update each field only if a new value is provided; otherwise, we preserve the old.
+    additional_fields = [
+        "code", "category", "automaticallyOpensOn", "automaticallyClosesOn",
+        "enableWaitlist", "waitlistCapacity", "enableWaitlistVirtual",
+        "capacity", "capacityUnlimited", "capacityVirtual", "virtualCapacityUnlimited",
+        "waitlistCapacityVirtual", "displayOnAgenda", "featured", "group",
+        "admissionItems", "openForRegistration", "openForAttendeeHub",
+        "registrationTypes", "presentationType", "dataTagCode", "status"
+    ]
+
+    for field in additional_fields:
+        # Use new value if present; otherwise, use existing.
+        new_val = session_data.get(field)
+        if new_val is None or (isinstance(new_val, str) and not new_val.strip()):
+            new_val = existing_session.get(field)
+        if new_val is not None:
+            payload[field] = new_val
+
+    # Debug: Print the payload as JSON
+    print("Update payload for session", session_id, ":", json.dumps(payload, indent=2))
+
+    # Now, make the PUT request.
     url = f"{CVENT_HOST}/{CVENT_VERSION}/sessions/{session_id}"
     headers = {
         "Authorization": f"Bearer {CVENT_ACCESS_TOKEN}",
         "Accept": "application/json",
         "Content-Type": "application/json",
     }
-
-    # Fetch existing session details to avoid missing required fields
-    existing_session = get_cvent_session(session_id)
-
-    if not existing_session:
-        print(f"Skipping update for session {session_id} due to missing details.")
-        return
-
-    description_html = convert_markdown_to_html(session_data["description"])
-
-    # Fetch custom field IDs
-    custom_fields = get_cvent_custom_fields()
-
-    # Sync both Speakers & Moderators
-    update_session_speakers(session_id, session_data["speakers"], session_data["moderators"])
-
-    # Ensure required fields are present
-    json_data = {
-        "status": existing_session.get("status", "ACTIVE"),  # Default to ACTIVE
-        "event": {"id": CVENT_EVENT_ID},
-        "title": session_data["title"] if session_data["title"] else existing_session.get("name"),
-        "start": session_data["start_time"] if session_data["start_time"] else existing_session.get("start"),
-        "end": session_data["end_time"] if session_data["end_time"] else existing_session.get("end"),
-        "description": description_html,
-        "location": {"id": CVENT_SESSION_LOCATIONS.get(session_data["location"])} if session_data["location"] else existing_session.get("location"),
-    }
-
-    # Remove empty values
-    json_data = {k: v for k, v in json_data.items() if v}
-
-    response = requests.put(url, headers=headers, json=json_data)
-
+    response = requests.put(url, headers=headers, json=payload)
     if response.status_code == 200:
         print(f"Updated session {session_id} in Cvent.")
     else:
         print(f"Failed to update session {session_id}. Error: {response.text}")
+
+    # Fetch custom field IDs
+    custom_fields = get_cvent_custom_fields()
 
     # Update custom fields
     if "stage" in session_data and session_data["stage"]:
