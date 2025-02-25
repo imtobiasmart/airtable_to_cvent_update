@@ -350,37 +350,26 @@ def update_session_speakers(session_id, airtable_speaker_codes, airtable_moderat
 CUSTOM_FIELDS = get_cvent_custom_fields()
 
 
-def fix_bold_italic_syntax(text):
-    """Fix incorrectly formatted bold/italic text by removing extra spaces inside asterisks."""
-    text = re.sub(r'\*\*\*(.*?)\s\*\*\*', r'***\1***', text)  # Bold & italic
-    text = re.sub(r'\*\*(.*?)\s\*\*', r'**\1**', text)          # Bold
-    text = re.sub(r'\*(.*?)\s\*', r'*\1*', text)                # Italic
-    return text
-
-
 def convert_markdown_to_html(markdown_text):
     """
-    Converts Markdown to HTML with the following behavior:
-      - A block of text separated by two or more newlines becomes a paragraph (<p>).
-      - Within each block, a single newline is replaced by a <br />.
+    Converts Markdown to HTML by replacing **bold** with <strong>bold</strong>
+    and *italic* with <em>italic</em>. It leaves all newline characters as they are,
+    and wraps the entire text in a single <p> tag.
     """
     if not markdown_text:
         return ""
 
-    html = markdown.markdown(markdown_text, extensions=["extra"])
+    html = re.sub(r'\*\*\*(.*?)\s\*\*\*', r'<strong><em>\1<strong><em>', markdown_text)
+    # Convert bold: **text** -> <strong>text</strong>
+    html = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', html)
+    # Convert italic: *text* -> <em>text</em>
+    html = re.sub(r'\*(.*?)\*', r'<em>\1</em>', html)
+    # Convert hyperlinks: [text](url) -> <a href="url">text</a>
+    html = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<a href="\2">\1</a>', html)
 
-    # Split the text into paragraphs on two or more newlines.
-    paragraphs = re.split(r'\n{2,}', html)
-
-    html_paragraphs = []
-    for para in paragraphs:
-        # Remove any leading/trailing whitespace in the paragraph.
-        para = para.strip()
-        # Wrap the paragraph in <p> tags.
-        html_paragraphs.append(f"<p>{para}</p>")
-
-    # Join the paragraphs with a newline separator.
-    return "\n".join(html_paragraphs)
+    # Do not convert newline characters at all.
+    # Wrap the entire text in one paragraph tag.
+    return f"<p>{html}</p>"
 
 
 def update_cvent_session(session_id, session_data):
