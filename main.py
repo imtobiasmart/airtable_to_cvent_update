@@ -359,11 +359,11 @@ def convert_markdown_to_html(markdown_text):
     if not markdown_text:
         return ""
 
-    html = re.sub(r'\*\*\*(.*?)\s\*\*\*', r'<strong><em>\1<strong><em>', markdown_text)
+    html = re.sub(r'\*\*\_(.*?)\s\_\*\*', r'<strong><i>\1</i></strong>', markdown_text)
     # Convert bold: **text** -> <strong>text</strong>
     html = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', html)
     # Convert italic: *text* -> <em>text</em>
-    html = re.sub(r'\*(.*?)\*', r'<em>\1</em>', html)
+    html = re.sub(r'\_(.*?)\_', r'<i>\1</i>', html)
     # Convert hyperlinks: [text](url) -> <a href="url">text</a>
     html = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<a href="\2">\1</a>', html)
 
