@@ -445,6 +445,9 @@ def update_cvent_session(session_id, session_data):
     # Debug: Print the payload as JSON
     print("Update payload for session", session_id, ":", json.dumps(payload, indent=2))
 
+    # Sync both Speakers & Moderators
+    update_session_speakers(session_id, session_data["speakers"], session_data["moderators"])
+
     # Now, make the PUT request.
     url = f"{CVENT_HOST}/{CVENT_VERSION}/sessions/{session_id}"
     headers = {
