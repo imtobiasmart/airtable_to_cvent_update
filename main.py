@@ -75,7 +75,9 @@ def get_modified_airtable_sessions():
         "Moderator Code",  # Fetch moderator codes
         "S Stage",
         "W Presentation Type Text",  # Type (Plain Text)
-        "Website Tags (SELECT 3 MAX)"
+        "Website Tags (SELECT 3 MAX)",
+        "Speaker",
+        "Moderator"
     ]
 
     # Build filter formula correctly with field names wrapped in `{}` and use Airtable-compatible date format
