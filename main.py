@@ -77,7 +77,8 @@ def get_modified_airtable_sessions():
         "W Presentation Type Text",  # Type (Plain Text)
         "Website Tags (SELECT 3 MAX)",
         "Speaker",
-        "Moderator"
+        "Moderator",
+        "Upload Status"  # Added Upload Status so we can check it later
     ]
 
     # Build filter formula correctly with field names wrapped in `{}` and use Airtable-compatible date format
@@ -95,15 +96,14 @@ def get_modified_airtable_sessions():
             "description": record["fields"].get("Description (<2500 characters)", "").strip(),
             "location": record["fields"].get("W Room Text", "").strip(),  # Using text field
             "speakers": [code.strip() for code in record["fields"].get("Speaker Code (from Speaker)", "") if code.strip()],  # Extract speakers
-            "moderators": [code.strip() for code in record["fields"].get("Moderator code", "") if code.strip()],  # Extract moderators
+            "moderators": [code.strip() for code in record["fields"].get("Moderator Code", "") if code.strip()],  # Extract moderators
             "stage": record["fields"].get("W Channel Text", "").strip(),
             "type": record["fields"].get("W Presentation Type Text", "").strip(),  # Using text field
-            "tags": record["fields"].get("Website Tags (SELECT 3 MAX)", []) if isinstance(record["fields"].get("Website Tags (SELECT 3 MAX)"), list) else []
+            "tags": record["fields"].get("Website Tags (SELECT 3 MAX)", []) if isinstance(record["fields"].get("Website Tags (SELECT 3 MAX)"), list) else [],
+            "upload_status": record["fields"].get("Upload Status", "").strip()  # New field for checking allowed statuses
         }
         for record in records if "Cvent Session ID" in record["fields"]
     }
-
-
 
 # Fetch existing Cvent session details
 def get_cvent_session(session_id):
@@ -238,7 +238,6 @@ def get_cvent_session_speakers(session_id):
 
     return speakers  # Returns {Speaker ID: Category ID}
 
-
 def get_cvent_speakers():
     """Fetches all available speakers for the event and returns {Speaker Code: Speaker ID}."""
     url = f"{CVENT_HOST}/{CVENT_VERSION}/speakers?filter=event.id eq '{CVENT_EVENT_ID}'&limit=100"
@@ -265,7 +264,6 @@ def get_cvent_speakers():
 
     return speakers  # Returns {Speaker Code: Speaker ID}
 
-
 def get_cvent_custom_fields():
     """Fetches all custom fields and returns a mapping of {Custom Field Name: Custom Field ID}."""
     url = f"{CVENT_HOST}/{CVENT_VERSION}/custom-fields?limit=100&filter=category eq 'Session'"
@@ -289,7 +287,6 @@ def get_cvent_custom_fields():
             break
 
     return custom_fields  # Returns {Custom Field Name: Custom Field ID}
-
 
 def update_session_custom_field(session_id, custom_field_id, value):
     """Updates a custom field answer for a session."""
@@ -351,7 +348,6 @@ def update_session_speakers(session_id, airtable_speaker_codes, airtable_moderat
 
 CUSTOM_FIELDS = get_cvent_custom_fields()
 
-
 def convert_markdown_to_html(markdown_text):
     """
     Converts Markdown to HTML by replacing **bold** with <strong>bold</strong>
@@ -373,15 +369,11 @@ def convert_markdown_to_html(markdown_text):
     # Wrap the entire text in one paragraph tag.
     return f"<p>{html}</p>"
 
-
 def update_cvent_session(session_id, session_data):
     """
     Updates a Cvent session by merging new values from session_data with
     existing values fetched from Cvent. For every parameter that can be updated,
     if a new value is not provided, the current value is preserved.
-
-    The description is converted from Markdown to plain text (since HTML is not supported),
-    and the "type" field (if provided as a string) is sent as an object.
     """
     # Fetch current session details from Cvent
     existing_session = get_cvent_session(session_id)
@@ -390,14 +382,13 @@ def update_cvent_session(session_id, session_data):
         return
 
     # Build the payload using new values if provided; otherwise, use existing values.
-    # Note: The keys in existing_session should match the API's expected names.
     payload = {}
 
     # Mandatory fields:
     payload["event"] = {"id": CVENT_EVENT_ID}
     payload["title"] = session_data.get("title", existing_session.get("title"))
 
-    # Description: convert Markdown to plain text (newlines are preserved)
+    # Description: convert Markdown to HTML
     if "description" in session_data and session_data["description"].strip():
         payload["description"] = convert_markdown_to_html(session_data["description"])
     else:
@@ -420,13 +411,11 @@ def update_cvent_session(session_id, session_data):
     # wrap it in an object with a "name" key; otherwise, use the existing value.
     new_type = session_data.get("type")
     if new_type and new_type.strip():
-        # If the existing value is already an object, we can choose to update its name.
         payload["type"] = {"name": new_type.strip()}
     else:
         payload["type"] = existing_session.get("type")
 
-    # Now, for all additional fields (as defined in the API schema)
-    # We update each field only if a new value is provided; otherwise, we preserve the old.
+    # Update additional fields if a new value is provided
     additional_fields = [
         "code", "category", "automaticallyOpensOn", "automaticallyClosesOn",
         "enableWaitlist", "waitlistCapacity", "enableWaitlistVirtual",
@@ -437,7 +426,6 @@ def update_cvent_session(session_id, session_data):
     ]
 
     for field in additional_fields:
-        # Use new value if present; otherwise, use existing.
         new_val = session_data.get(field)
         if new_val is None or (isinstance(new_val, str) and not new_val.strip()):
             new_val = existing_session.get(field)
@@ -463,10 +451,9 @@ def update_cvent_session(session_id, session_data):
     else:
         print(f"Failed to update session {session_id}. Error: {response.text}")
 
-    # Fetch custom field IDs
+    # Fetch custom field IDs and update custom fields
     custom_fields = get_cvent_custom_fields()
 
-    # Update custom fields
     if "stage" in session_data and session_data["stage"]:
         update_session_custom_field(session_id, custom_fields.get("stage"), session_data["stage"])
 
@@ -480,11 +467,17 @@ def update_cvent_session(session_id, session_data):
 def check_and_update_sessions():
     modified_sessions = get_modified_airtable_sessions()
 
+    # Define allowed upload statuses
+    allowed_statuses = {"Upload Complete", "Changed - Ready for Re-Upload", "Ready for Upload"}
+
     if not modified_sessions:
         print("No relevant session fields modified in the last hour.")
         return
 
     for session_id, session_data in modified_sessions.items():
+        if session_data.get("upload_status") not in allowed_statuses:
+            print(f"Skipping update for session {session_id} because upload status is '{session_data.get('upload_status')}' which is not allowed.")
+            continue
         update_cvent_session(session_id, session_data)
 
 # Run the script every hour
