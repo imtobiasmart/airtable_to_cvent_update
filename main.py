@@ -460,8 +460,7 @@ def update_cvent_session(session_id, session_data):
     if "type" in session_data and session_data["type"]:
         update_session_custom_field(session_id, custom_fields.get("type"), session_data["type"])
 
-    if "tags" in session_data and session_data["tags"]:
-        update_session_custom_field(session_id, custom_fields.get("tags"), session_data["tags"])
+    update_session_custom_field(session_id, custom_fields.get("tags"), session_data.get("tags", []))
 
 # Main function to check for updates every hour
 def check_and_update_sessions():
