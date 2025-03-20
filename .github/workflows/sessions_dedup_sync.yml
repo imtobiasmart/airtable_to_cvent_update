@@ -25,7 +25,7 @@ jobs:
           pip install pyairtable
 
       - name: Download state from previous run
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: sync-state
           path: .
@@ -42,7 +42,7 @@ jobs:
         run: python sessions_dedup_sync.py
 
       - name: Upload state for next run
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: sync-state
           path: last_sync_state.txt
