@@ -28,6 +28,7 @@ def process_airtable_data():
     source_table_id = os.environ.get("AIRTABLE_SOURCE_TABLE", "tblAD4ax7xst4inyC")
     dest_table_id = os.environ.get("AIRTABLE_DEST_TABLE", "tblZRPk0Y3NydRuZz")
     view_name = os.environ.get("AIRTABLE_VIEW_NAME", "S25 Speakers_EA View")
+    full_cleanup = os.environ.get("FULL_CLEANUP", "false").lower() == "true"
 
     # Get last sync timestamp from state file or use a default (24 hours ago)
     last_sync_time = get_last_sync_time()
@@ -39,19 +40,20 @@ def process_airtable_data():
         source_table = api.table(base_id, source_table_id)
         dest_table = api.table(base_id, dest_table_id)
 
-        # Fetch records from the specified view that were modified since last sync
-        log(f"Fetching records from Speaker table with '{view_name}' view...")
-        formula = f"LAST_MODIFIED_TIME() >= '{last_sync_time}'"
-        records = source_table.all(view=view_name, formula=formula)
-        log(f"Found {len(records)} speaker records modified since last sync")
+        # Decide whether to do full cleanup or just process modified records
+        if full_cleanup:
+            log("Performing FULL cleanup - fetching ALL records from source table...")
+            records = source_table.all(view=view_name)
+            log(f"Found {len(records)} total speaker records in source table")
+        else:
+            # Fetch records from the specified view that were modified since last sync
+            log(f"Fetching records from Speaker table with '{view_name}' view modified since last sync...")
+            formula = f"LAST_MODIFIED_TIME() >= '{last_sync_time}'"
+            records = source_table.all(view=view_name, formula=formula)
+            log(f"Found {len(records)} speaker records modified since last sync")
 
-        if not records:
-            log("No records to process. Exiting.")
-            update_last_sync_time()
-            return
-
-        # Get existing records from destination table for possible updates
-        log("Fetching existing records from destination table...")
+        # Get all records from destination table for possible updates and deletions
+        log("Fetching all records from destination table...")
         existing_records = dest_table.all()
         log(f"Found {len(existing_records)} existing records in destination table")
 
@@ -67,10 +69,12 @@ def process_airtable_data():
                 key = f"{speaker_id}_{session_id}_{role}"
                 existing_record_map[key] = er['id']
 
+        # Set to collect all valid speaker-session combinations from source
+        valid_combinations = set()
+
         # Lists to track operations
         records_to_create = []
         records_to_update = []
-        processed_records = set()
 
         # Process each speaker record
         for record in records:
@@ -88,6 +92,9 @@ def process_airtable_data():
 
                 # Create a record for each speaking session
                 for session_id in speaking_sessions:
+                    # Add to valid combinations
+                    valid_combinations.add(f"{record_id}_{session_id}_Speaking")
+
                     session_fields = {
                         'Name': speaker_name,
                         'Speaker': [record_id],
@@ -105,11 +112,9 @@ def process_airtable_data():
                             'fields': session_fields
                         }
                         records_to_update.append(record_to_update)
-                        processed_records.add(key)
                     else:
                         # New record, prepare for creation
                         records_to_create.append(session_fields)
-                        processed_records.add(key)
 
             # Process sessions where the speaker is moderating
             moderating_sessions = fields.get('Moderating', [])
@@ -120,6 +125,9 @@ def process_airtable_data():
 
                 # Create a record for each moderating session
                 for session_id in moderating_sessions:
+                    # Add to valid combinations
+                    valid_combinations.add(f"{record_id}_{session_id}_Moderating")
+
                     session_fields = {
                         'Name': speaker_name,
                         'Speaker': [record_id],
@@ -137,14 +145,37 @@ def process_airtable_data():
                             'fields': session_fields
                         }
                         records_to_update.append(record_to_update)
-                        processed_records.add(key)
                     else:
                         # New record, prepare for creation
                         records_to_create.append(session_fields)
-                        processed_records.add(key)
+
+        # Identify records to delete (records in destination that don't exist in source anymore)
+        records_to_delete = []
+
+        if full_cleanup:
+            # Full cleanup - delete any record not in valid_combinations
+            for key, record_id in existing_record_map.items():
+                if key not in valid_combinations:
+                    records_to_delete.append(record_id)
+        else:
+            # Partial cleanup - only delete records related to speakers we processed
+            processed_speaker_ids = {record['id'] for record in records}
+
+            for er in existing_records:
+                er_fields = er.get('fields', {})
+                speaker_id = er_fields.get('Speaker', [''])[0] if er_fields.get('Speaker') else ''
+                session_id = er_fields.get('Session', [''])[0] if er_fields.get('Session') else ''
+                role = er_fields.get('Role', '')
+
+                # Only consider records for speakers we processed
+                if speaker_id in processed_speaker_ids:
+                    key = f"{speaker_id}_{session_id}_{role}"
+                    if key not in valid_combinations:
+                        records_to_delete.append(er['id'])
 
         log(f"Records to create: {len(records_to_create)}")
         log(f"Records to update: {len(records_to_update)}")
+        log(f"Records to delete: {len(records_to_delete)}")
 
         # Create new records in batches
         if records_to_create:
@@ -175,6 +206,21 @@ def process_airtable_data():
                 time.sleep(0.5)
 
             log(f"Successfully updated {updated_count} existing records")
+
+        # Delete records in batches
+        if records_to_delete:
+            log("Deleting orphaned records in batches...")
+            batch_size = 10
+            deleted_count = 0
+
+            for i in range(0, len(records_to_delete), batch_size):
+                batch = records_to_delete[i:i+batch_size]
+                dest_table.batch_delete(batch)
+                deleted_count += len(batch)
+                log(f"Deleted batch {i//batch_size + 1}, total: {deleted_count}")
+                time.sleep(0.5)
+
+            log(f"Successfully deleted {deleted_count} orphaned records")
 
         # Update the last sync time
         update_last_sync_time()
