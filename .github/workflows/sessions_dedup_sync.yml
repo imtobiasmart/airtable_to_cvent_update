@@ -35,7 +35,7 @@ jobs:
           AIRTABLE_SOURCE_TABLE: ${{ secrets.AIRTABLE_SOURCE_TABLE }}
           AIRTABLE_DEST_TABLE: ${{ secrets.AIRTABLE_DEST_TABLE }}
           AIRTABLE_VIEW_NAME: ${{ secrets.AIRTABLE_VIEW_NAME }}
-        run: python sync_airtable.py
+        run: python sessions_dedup_sync.py
 
       - name: Commit and push state file if changed
         run: |
