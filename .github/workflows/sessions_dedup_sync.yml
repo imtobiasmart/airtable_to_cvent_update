@@ -12,10 +12,10 @@ jobs:
       last_sync_time: ${{ steps.sync.outputs.last_sync_time }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
@@ -24,12 +24,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install pyairtable
 
-      - name: Download state from previous run
-        uses: actions/download-artifact@v4
+      - name: Restore sync state cache
+        id: cache-restore
+        uses: actions/cache/restore@v4
         with:
-          name: sync-state
-          path: .
-        continue-on-error: true  # Continue even if no artifact exists
+          path: last_sync_state.txt
+          key: airtable-sync-state
+          restore-keys: airtable-sync-state
+        continue-on-error: true
 
       - name: Run Airtable sync script
         id: sync
@@ -41,9 +43,8 @@ jobs:
           AIRTABLE_VIEW_NAME: ${{ secrets.AIRTABLE_VIEW_NAME }}
         run: python sessions_dedup_sync.py
 
-      - name: Upload state for next run
-        uses: actions/upload-artifact@v4
+      - name: Save sync state cache
+        uses: actions/cache/save@v4
         with:
-          name: sync-state
           path: last_sync_state.txt
-          retention-days: 1  # Only keep for 1 day since we run daily
+          key: airtable-sync-state
