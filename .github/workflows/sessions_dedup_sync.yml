@@ -1,4 +1,4 @@
-name: Airtable Daily Sync
+name: Airtable Sessions Deduplication Sync
 
 on:
   schedule:
