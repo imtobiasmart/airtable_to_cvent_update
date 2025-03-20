@@ -43,6 +43,10 @@ jobs:
           AIRTABLE_VIEW_NAME: ${{ secrets.AIRTABLE_VIEW_NAME }}
         run: python sessions_dedup_sync.py
 
+      - name: Generate unique timestamp
+        id: timestamp
+        run: echo "time=$(date +%Y%m%d%H%M%S)" >> $GITHUB_OUTPUT
+
       - name: Save sync state cache
         uses: actions/cache/save@v4
         with:
