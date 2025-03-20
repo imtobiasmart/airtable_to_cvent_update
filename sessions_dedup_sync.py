@@ -29,12 +29,8 @@ def process_airtable_data():
     dest_table_id = os.environ.get("AIRTABLE_DEST_TABLE", "tblZRPk0Y3NydRuZz")
     view_name = os.environ.get("AIRTABLE_VIEW_NAME", "S25 Speakers_EA View")
 
-    # Get last sync timestamp from environment variable or use a default (24 hours ago)
-    last_sync_time = os.environ.get("LAST_SYNC_TIME")
-    if not last_sync_time:
-        # Default to 24 hours ago
-        last_sync_time = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
-
+    # Get last sync timestamp from state file or use a default (24 hours ago)
+    last_sync_time = get_last_sync_time()
     log(f"Processing records modified since: {last_sync_time}")
 
     try:
@@ -51,10 +47,7 @@ def process_airtable_data():
 
         if not records:
             log("No records to process. Exiting.")
-            # Set the output for GitHub Actions
-            if os.environ.get("GITHUB_ACTIONS") == "true":
-                with open(os.environ.get("GITHUB_OUTPUT", ""), "a") as f:
-                    f.write(f"last_sync_time={datetime.now().strftime('%Y-%m-%dT%H:%M:%S.000Z')}\n")
+            update_last_sync_time()
             return
 
         # Get existing records from destination table for possible updates
@@ -183,16 +176,41 @@ def process_airtable_data():
 
             log(f"Successfully updated {updated_count} existing records")
 
-        # Set output for GitHub Actions
-        if os.environ.get("GITHUB_ACTIONS") == "true":
-            with open(os.environ.get("GITHUB_OUTPUT", ""), "a") as f:
-                f.write(f"last_sync_time={datetime.now().strftime('%Y-%m-%dT%H:%M:%S.000Z')}\n")
+        # Update the last sync time
+        update_last_sync_time()
 
         log("Sync completed successfully")
 
     except Exception as e:
         log(f"ERROR: An error occurred: {str(e)}")
         sys.exit(1)
+
+def get_last_sync_time():
+    """Get the timestamp of the last successful sync"""
+    try:
+        # Check for state file
+        if os.path.exists("last_sync_state.txt"):
+            with open("last_sync_state.txt", 'r') as f:
+                return f.read().strip()
+
+        # If no state file exists, use 24 hours ago
+        return (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+    except Exception as e:
+        log(f"Warning: Could not read last sync time: {e}")
+        # Default to 24 hours ago
+        return (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+def update_last_sync_time():
+    """Update the timestamp of the last successful sync"""
+    try:
+        # Write current time to state file
+        current_time = datetime.now().strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        with open("last_sync_state.txt", 'w') as f:
+            f.write(current_time)
+
+    except Exception as e:
+        log(f"Warning: Could not update last sync time: {e}")
 
 if __name__ == "__main__":
     process_airtable_data()

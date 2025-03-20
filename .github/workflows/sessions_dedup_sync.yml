@@ -24,9 +24,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install pyairtable
 
-      - name: Get last sync time
-        id: get_time
-        run: echo "LAST_SYNC_TIME=$(cat .github/sync_state || echo '')" >> $GITHUB_ENV
+      - name: Download state from previous run
+        uses: actions/download-artifact@v3
+        with:
+          name: sync-state
+          path: .
+        continue-on-error: true  # Continue even if no artifact exists
 
       - name: Run Airtable sync script
         id: sync
@@ -38,6 +41,9 @@ jobs:
           AIRTABLE_VIEW_NAME: ${{ secrets.AIRTABLE_VIEW_NAME }}
         run: python sessions_dedup_sync.py
 
-      - name: Save last sync time
-        if: steps.sync.outputs.last_sync_time != ''
-        run: echo "${{ steps.sync.outputs.last_sync_time }}" > .github/sync_state
+      - name: Upload state for next run
+        uses: actions/upload-artifact@v3
+        with:
+          name: sync-state
+          path: last_sync_state.txt
+          retention-days: 1  # Only keep for 1 day since we run daily
