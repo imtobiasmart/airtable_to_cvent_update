@@ -30,7 +30,7 @@ jobs:
         with:
           path: last_sync_state.txt
           key: airtable-sync-state
-          restore-keys: airtable-sync-state
+          restore-keys: airtable-sync-
         continue-on-error: true
 
       - name: Run Airtable sync script
@@ -47,4 +47,5 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: last_sync_state.txt
-          key: airtable-sync-state
+          # Use a unique key for each run by appending timestamp
+          key: airtable-sync-${{ steps.timestamp.outputs.time }}
