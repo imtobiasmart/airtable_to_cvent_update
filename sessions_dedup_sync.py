@@ -1,6 +1,5 @@
 import os
 import sys
-import json
 import time
 from datetime import datetime, timedelta
 from pyairtable import Api
@@ -9,6 +8,12 @@ from pyairtable import Api
 def log(message):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{timestamp}] {message}")
+    # Add GitHub Actions workflow commands for better visibility
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        if "ERROR" in message:
+            print(f"::error::{message}")
+        elif "WARNING" in message:
+            print(f"::warning::{message}")
 
 def process_airtable_data():
     log("=== Airtable Speaker Session Migration Tool ===")
@@ -24,8 +29,12 @@ def process_airtable_data():
     dest_table_id = os.environ.get("AIRTABLE_DEST_TABLE", "tblZRPk0Y3NydRuZz")
     view_name = os.environ.get("AIRTABLE_VIEW_NAME", "S25 Speakers_EA View")
 
-    # Get last sync timestamp from state file or use a default (24 hours ago)
-    last_sync_time = get_last_sync_time()
+    # Get last sync timestamp from environment variable or use a default (24 hours ago)
+    last_sync_time = os.environ.get("LAST_SYNC_TIME")
+    if not last_sync_time:
+        # Default to 24 hours ago
+        last_sync_time = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
     log(f"Processing records modified since: {last_sync_time}")
 
     try:
@@ -42,11 +51,13 @@ def process_airtable_data():
 
         if not records:
             log("No records to process. Exiting.")
-            update_last_sync_time()
+            # Set the output for GitHub Actions
+            if os.environ.get("GITHUB_ACTIONS") == "true":
+                with open(os.environ.get("GITHUB_OUTPUT", ""), "a") as f:
+                    f.write(f"last_sync_time={datetime.now().strftime('%Y-%m-%dT%H:%M:%S.000Z')}\n")
             return
 
         # Get existing records from destination table for possible updates
-        # We'll create a mapping of Speaker+Session+Role to record ID
         log("Fetching existing records from destination table...")
         existing_records = dest_table.all()
         log(f"Found {len(existing_records)} existing records in destination table")
@@ -172,49 +183,16 @@ def process_airtable_data():
 
             log(f"Successfully updated {updated_count} existing records")
 
-        # Update the last sync time
-        update_last_sync_time()
+        # Set output for GitHub Actions
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            with open(os.environ.get("GITHUB_OUTPUT", ""), "a") as f:
+                f.write(f"last_sync_time={datetime.now().strftime('%Y-%m-%dT%H:%M:%S.000Z')}\n")
 
         log("Sync completed successfully")
 
     except Exception as e:
         log(f"ERROR: An error occurred: {str(e)}")
         sys.exit(1)
-
-def get_last_sync_time():
-    """Get the timestamp of the last successful sync"""
-    try:
-        # If running in GitHub Actions, check for state file
-        state_path = os.environ.get("GITHUB_STATE_PATH", ".last_sync_state.json")
-
-        if os.path.exists(state_path):
-            with open(state_path, 'r') as f:
-                state = json.load(f)
-                return state.get("last_sync_time")
-
-        # If no state file exists or no timestamp in it, use 24 hours ago
-        return (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
-
-    except Exception as e:
-        log(f"Warning: Could not read last sync time: {e}")
-        # Default to 24 hours ago
-        return (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
-
-def update_last_sync_time():
-    """Update the timestamp of the last successful sync"""
-    try:
-        # If running in GitHub Actions, update state file
-        state_path = os.environ.get("GITHUB_STATE_PATH", ".last_sync_state.json")
-
-        state = {
-            "last_sync_time": datetime.now().strftime("%Y-%m-%dT%H:%M:%S.000Z")
-        }
-
-        with open(state_path, 'w') as f:
-            json.dump(state, f)
-
-    except Exception as e:
-        log(f"Warning: Could not update last sync time: {e}")
 
 if __name__ == "__main__":
     process_airtable_data()

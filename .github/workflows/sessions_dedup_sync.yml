@@ -8,6 +8,8 @@ on:
 jobs:
   sync:
     runs-on: ubuntu-latest
+    outputs:
+      last_sync_time: ${{ steps.sync.outputs.last_sync_time }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -22,25 +24,20 @@ jobs:
           python -m pip install --upgrade pip
           pip install pyairtable
 
-      - name: Load state from previous runs
-        uses: actions/cache@v3
-        with:
-          path: .last_sync_state.json
-          key: ${{ runner.os }}-airtable-sync-state
+      - name: Get last sync time
+        id: get_time
+        run: echo "LAST_SYNC_TIME=$(cat .github/sync_state || echo '')" >> $GITHUB_ENV
 
       - name: Run Airtable sync script
+        id: sync
         env:
           AIRTABLE_API_KEY: ${{ secrets.AIRTABLE_API_KEY }}
           AIRTABLE_BASE_ID: ${{ secrets.AIRTABLE_BASE_ID }}
           AIRTABLE_SOURCE_TABLE: ${{ secrets.AIRTABLE_SOURCE_TABLE }}
           AIRTABLE_DEST_TABLE: ${{ secrets.AIRTABLE_DEST_TABLE }}
           AIRTABLE_VIEW_NAME: ${{ secrets.AIRTABLE_VIEW_NAME }}
-        run: python sessions_dedup_sync.py
+        run: python sync_airtable.py
 
-      - name: Commit and push state file if changed
-        run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-          git add .last_sync_state.json
-          git commit -m "Update last sync state" || echo "No changes to commit"
-          git push
+      - name: Save last sync time
+        if: steps.sync.outputs.last_sync_time != ''
+        run: echo "${{ steps.sync.outputs.last_sync_time }}" > .github/sync_state
